@@ -39,7 +39,7 @@ app.get("/users", async (req, res) => {
 
 // Tutor Api
 
-app.post("/post-tuition", async (req, res) => {
+app.post("/tuitions", async (req, res) => {
   try {
     const {
       title,
@@ -105,6 +105,8 @@ app.post("/post-tuition", async (req, res) => {
     });
   }
 });
+
+
 
 app.listen(PORT, () => {
   console.log(`Metor Lagbe is running on port: ${PORT}`);
