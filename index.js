@@ -47,6 +47,34 @@ app.get("/users", async (req, res) => {
   }
 });
 
+app.patch("/users/:id/role", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid user ID." });
+    }
+
+    if (!["student", "tutor", "admin"].includes(role)) {
+      return res.status(400).send({ message: "Invalid user role." });
+    }
+
+    const result = await users.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { role } },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "User not found." });
+    }
+
+    res.send({ message: "User role updated successfully." });
+  } catch (error) {
+    res.status(500).send({ message: "Failed to update user role." });
+  }
+});
+
 // Get tutor's tuitions
 app.get("/tuitions", async (req, res) => {
   try {
