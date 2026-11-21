@@ -388,7 +388,35 @@ app.get("/admin/tuitions", async (req, res) => {
   }
 });
 
+app.patch("/admin/tuitions/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approvalStatus } = req.body;
 
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid tuition ID." });
+    }
+
+    if (!["approved", "rejected"].includes(approvalStatus)) {
+      return res.status(400).send({ message: "Invalid approval status." });
+    }
+
+    const result = await tuitions.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { approvalStatus } },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Tuition not found." });
+    }
+
+    res.send({ message: "Tuition status updated successfully." });
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to update tuition status.",
+    });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`MentorLagbe is running on port: ${PORT}`);
