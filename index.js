@@ -17,28 +17,63 @@ export async function connectToMongoDB() {
     console.log("You successfully connected to MongoDB!");
     return client;
   } catch (err) {
-    console.dir(err);
+    console.error("MongoDB connection error:", err);
+    return null;
   }
 }
 
 const connectedClient = await connectToMongoDB();
+
+if (!connectedClient) {
+  throw new Error("Could not connect to MongoDB.");
+}
+
 const database = connectedClient.db("mentorlagbe");
 const users = database.collection("user");
 const tuitions = database.collection("tuitions");
 
 app.get("/", (req, res) => {
-  res.send(`Metor Lagbe is running on port: ${PORT}`);
+  res.send(`MentorLagbe is running on port: ${PORT}`);
 });
 
-// Users Api
+// Users API
 app.get("/users", async (req, res) => {
-  const cursor = users.find({});
-  const result = await cursor.toArray();
-  res.send(result);
+  try {
+    const result = await users.find({}).toArray();
+    res.send(result);
+  } catch (error) {
+    console.error("Get users error:", error);
+    res.status(500).send({ message: "Failed to fetch users." });
+  }
 });
 
-// Tutor Api
+// Get tutor's tuitions
+app.get("/tuitions", async (req, res) => {
+  try {
+    const { tutorEmail } = req.query;
 
+    if (!tutorEmail) {
+      return res.status(400).send({
+        message: "Tutor email is required.",
+      });
+    }
+
+    const result = await tuitions
+      .find({ tutorEmail: String(tutorEmail).trim().toLowerCase() })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Get tuitions error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch tuitions.",
+    });
+  }
+});
+
+// Create a tuition
 app.post("/tuitions", async (req, res) => {
   try {
     const {
@@ -51,18 +86,26 @@ app.post("/tuitions", async (req, res) => {
       daysPerWeek,
       bannerImage,
       description,
+      tutorEmail,
+      tutorName,
     } = req.body;
 
+    const fee = Number(monthlyFee);
+    const days = Number(daysPerWeek);
+
     if (
-      !title ||
-      !subject ||
-      !classLevel ||
-      !mode ||
-      !location ||
-      !monthlyFee ||
-      !daysPerWeek ||
+      !title?.trim() ||
+      !subject?.trim() ||
+      !classLevel?.trim() ||
+      !location?.trim() ||
       !bannerImage ||
-      !description
+      !description?.trim() ||
+      !tutorEmail?.trim() ||
+      !tutorName?.trim() ||
+      !Number.isFinite(fee) ||
+      fee <= 0 ||
+      !Number.isInteger(days) ||
+      days <= 0
     ) {
       return res.status(400).send({
         message: "Please provide all required tuition information.",
@@ -76,15 +119,17 @@ app.post("/tuitions", async (req, res) => {
     }
 
     const tuition = {
-      title,
-      subject,
-      classLevel,
+      title: title.trim(),
+      subject: subject.trim(),
+      classLevel: classLevel.trim(),
       mode,
-      location,
-      monthlyFee: Number(monthlyFee),
-      daysPerWeek: Number(daysPerWeek),
+      location: location.trim(),
+      monthlyFee: fee,
+      daysPerWeek: days,
       bannerImage,
-      description,
+      description: description.trim(),
+      tutorName: tutorName.trim(),
+      tutorEmail: tutorEmail.trim().toLowerCase(),
       approvalStatus: "pending",
       isActive: true,
       createdAt: new Date(),
@@ -106,8 +151,6 @@ app.post("/tuitions", async (req, res) => {
   }
 });
 
-
-
 app.listen(PORT, () => {
-  console.log(`Metor Lagbe is running on port: ${PORT}`);
+  console.log(`MentorLagbe is running on port: ${PORT}`);
 });
