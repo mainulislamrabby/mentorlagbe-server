@@ -32,6 +32,7 @@ const database = connectedClient.db("mentorlagbe");
 const users = database.collection("user");
 const tuitions = database.collection("tuitions");
 const payments = database.collection("payments");
+const applications = database.collection("applications");
 
 app.get("/", (req, res) => {
   res.send(`MentorLagbe is running on port: ${PORT}`);
@@ -73,6 +74,55 @@ app.patch("/users/:id/role", async (req, res) => {
     res.send({ message: "User role updated successfully." });
   } catch (error) {
     res.status(500).send({ message: "Failed to update user role." });
+  }
+});
+
+// Student API
+app.get("/student/stats", async (req, res) => {
+  try {
+    const { studentEmail } = req.query;
+
+    if (!studentEmail) {
+      return res.status(400).send({
+        message: "Student email is required.",
+      });
+    }
+
+    const [totalApplications, acceptedApplications, pendingApplications, student] =
+      await Promise.all([
+        applications.countDocuments({ studentEmail }),
+        applications.countDocuments({
+          studentEmail,
+          status: "accepted",
+        }),
+        applications.countDocuments({
+          studentEmail,
+          status: "pending",
+        }),
+        users.findOne(
+          { email: studentEmail },
+          { projection: { plan: 1 } },
+        ),
+      ]);
+
+    if (!student) {
+      return res.status(404).send({
+        message: "Student not found.",
+      });
+    }
+
+    res.send({
+      totalApplications,
+      acceptedApplications,
+      pendingApplications,
+      currentPlan: student.plan || "free",
+    });
+  } catch (error) {
+    console.error("Student stats error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch student statistics.",
+    });
   }
 });
 
@@ -332,7 +382,7 @@ app.delete("/tuitions/:id", async (req, res) => {
   }
 });
 
-// Admi Api
+// Admin Api
 app.get("/admin/stats", async (req, res) => {
   try {
     const [
