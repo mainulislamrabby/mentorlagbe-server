@@ -88,22 +88,23 @@ app.get("/student/stats", async (req, res) => {
       });
     }
 
-    const [totalApplications, acceptedApplications, pendingApplications, student] =
-      await Promise.all([
-        applications.countDocuments({ studentEmail }),
-        applications.countDocuments({
-          studentEmail,
-          status: "accepted",
-        }),
-        applications.countDocuments({
-          studentEmail,
-          status: "pending",
-        }),
-        users.findOne(
-          { email: studentEmail },
-          { projection: { plan: 1 } },
-        ),
-      ]);
+    const [
+      totalApplications,
+      acceptedApplications,
+      pendingApplications,
+      student,
+    ] = await Promise.all([
+      applications.countDocuments({ studentEmail }),
+      applications.countDocuments({
+        studentEmail,
+        status: "accepted",
+      }),
+      applications.countDocuments({
+        studentEmail,
+        status: "pending",
+      }),
+      users.findOne({ email: studentEmail }, { projection: { plan: 1 } }),
+    ]);
 
     if (!student) {
       return res.status(404).send({
@@ -122,6 +123,32 @@ app.get("/student/stats", async (req, res) => {
 
     res.status(500).send({
       message: "Failed to fetch student statistics.",
+    });
+  }
+});
+
+// Get Student Applications
+app.get("/student/applications", async (req, res) => {
+  try {
+    const { studentEmail } = req.query;
+
+    if (!studentEmail) {
+      return res.status(400).send({
+        message: "Student email is required.",
+      });
+    }
+
+    const result = await applications
+      .find({ studentEmail: studentEmail.toLowerCase() })
+      .sort({ appliedAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Get student applications error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch student applications.",
     });
   }
 });
@@ -425,10 +452,7 @@ app.get("/admin/stats", async (req, res) => {
 
 app.get("/admin/tuitions", async (req, res) => {
   try {
-    const result = await tuitions
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
+    const result = await tuitions.find({}).sort({ createdAt: -1 }).toArray();
 
     res.send(result);
   } catch (error) {
