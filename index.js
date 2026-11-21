@@ -373,6 +373,23 @@ app.get("/admin/stats", async (req, res) => {
   }
 });
 
+app.get("/admin/tuitions", async (req, res) => {
+  try {
+    const result = await tuitions
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch tuition posts.",
+    });
+  }
+});
+
+
+
 app.listen(PORT, () => {
   console.log(`MentorLagbe is running on port: ${PORT}`);
 });
