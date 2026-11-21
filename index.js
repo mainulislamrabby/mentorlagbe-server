@@ -234,7 +234,39 @@ app.patch("/tuitions/:id", async (req, res) => {
   }
 });
 
+app.patch("/tuitions/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tutorEmail, isActive } = req.body;
 
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid tuition ID." });
+    }
+
+    if (!tutorEmail || typeof isActive !== "boolean") {
+      return res.status(400).send({ message: "Invalid status information." });
+    }
+
+    const result = await tuitions.updateOne(
+      { _id: new ObjectId(id), tutorEmail },
+      { $set: { isActive } },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        message: "Tuition not found or you do not own this listing.",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: `Tuition ${isActive ? "activated" : "closed"} successfully.`,
+    });
+  } catch (error) {
+    console.error("Toggle tuition error:", error);
+    res.status(500).send({ message: "Failed to update tuition status." });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`MentorLagbe is running on port: ${PORT}`);
