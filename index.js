@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import "dotenv/config";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -52,24 +52,17 @@ app.get("/tuitions", async (req, res) => {
   try {
     const { tutorEmail } = req.query;
 
-    if (!tutorEmail) {
-      return res.status(400).send({
-        message: "Tutor email is required.",
-      });
-    }
+    const filter = tutorEmail ? { tutorEmail } : {};
 
     const result = await tuitions
-      .find({ tutorEmail: String(tutorEmail).trim().toLowerCase() })
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray();
 
     res.send(result);
   } catch (error) {
     console.error("Get tuitions error:", error);
-
-    res.status(500).send({
-      message: "Failed to fetch tuitions.",
-    });
+    res.status(500).send({ message: "Failed to fetch tuitions." });
   }
 });
 
