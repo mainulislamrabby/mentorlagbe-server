@@ -153,6 +153,45 @@ app.get("/student/applications", async (req, res) => {
   }
 });
 
+// Cancel Student Application
+app.delete("/student/applications/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { studentEmail } = req.query;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid application ID." });
+    }
+
+    if (!studentEmail) {
+      return res.status(400).send({ message: "Student email is required." });
+    }
+
+    const result = await applications.deleteOne({
+      _id: new ObjectId(id),
+      studentEmail: studentEmail.toLowerCase(),
+      status: "pending",
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        message: "Application not found or it can no longer be cancelled.",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: "Application cancelled successfully.",
+    });
+  } catch (error) {
+    console.error("Cancel student application error:", error);
+
+    res.status(500).send({
+      message: "Failed to cancel application.",
+    });
+  }
+});
+
 // Tutor Api
 app.get("/tuitions", async (req, res) => {
   try {
