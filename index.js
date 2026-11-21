@@ -31,6 +31,7 @@ if (!connectedClient) {
 const database = connectedClient.db("mentorlagbe");
 const users = database.collection("user");
 const tuitions = database.collection("tuitions");
+const payments = database.collection("payments");
 
 app.get("/", (req, res) => {
   res.send(`MentorLagbe is running on port: ${PORT}`);
@@ -75,7 +76,7 @@ app.patch("/users/:id/role", async (req, res) => {
   }
 });
 
-// Get tutor's tuitions
+// Tutor Api
 app.get("/tuitions", async (req, res) => {
   try {
     const { tutorEmail } = req.query;
@@ -94,7 +95,6 @@ app.get("/tuitions", async (req, res) => {
   }
 });
 
-// Create a tuition
 app.post("/tuitions", async (req, res) => {
   try {
     const {
@@ -329,6 +329,47 @@ app.delete("/tuitions/:id", async (req, res) => {
   } catch (error) {
     console.error("Delete tuition error:", error);
     res.status(500).send({ message: "Failed to delete tuition." });
+  }
+});
+
+// Admi Api
+app.get("/admin/stats", async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      totalTutors,
+      pendingTuitions,
+      approvedTuitions,
+      revenueByCurrency,
+    ] = await Promise.all([
+      users.countDocuments(),
+      users.countDocuments({ role: "tutor" }),
+      tuitions.countDocuments({ approvalStatus: "pending" }),
+      tuitions.countDocuments({ approvalStatus: "approved" }),
+      payments
+        .aggregate([
+          { $match: { paymentStatus: "paid" } },
+          {
+            $group: {
+              _id: "$currency",
+              total: { $sum: "$amount" },
+            },
+          },
+        ])
+        .toArray(),
+    ]);
+
+    res.send({
+      totalUsers,
+      totalTutors,
+      pendingTuitions,
+      approvedTuitions,
+      revenueByCurrency,
+    });
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch admin statistics.",
+    });
   }
 });
 
