@@ -268,6 +268,40 @@ app.patch("/tuitions/:id/status", async (req, res) => {
   }
 });
 
+app.delete("/tuitions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tutorEmail } = req.query;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid tuition ID." });
+    }
+
+    if (!tutorEmail) {
+      return res.status(400).send({ message: "Tutor email is required." });
+    }
+
+    const result = await tuitions.deleteOne({
+      _id: new ObjectId(id),
+      tutorEmail,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        message: "Tuition not found or you do not own this listing.",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: "Tuition deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete tuition error:", error);
+    res.status(500).send({ message: "Failed to delete tuition." });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`MentorLagbe is running on port: ${PORT}`);
 });
