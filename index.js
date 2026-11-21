@@ -126,6 +126,8 @@ app.post("/tuitions", async (req, res) => {
       approvalStatus: "pending",
       isActive: true,
       createdAt: new Date(),
+      tutorEmail,
+      tutorName,
     };
 
     const result = await tuitions.insertOne(tuition);
