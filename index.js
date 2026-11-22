@@ -259,9 +259,7 @@ app.post("/stripe/create-checkout-session", verifyToken, async (req, res) => {
         : process.env.STRIPE_TUTOR_PRICE_ID;
 
     const planName =
-      req.user.role === "student"
-        ? "Pro Student Plan"
-        : "Pro Tutor Plan";
+      req.user.role === "student" ? "Pro Student Plan" : "Pro Tutor Plan";
 
     if (!priceId) {
       return res.status(500).send({
@@ -469,10 +467,24 @@ app.get("/auth-test", verifyToken, (req, res) => {
   });
 });
 
-// Users API
-app.get("/users", async (req, res) => {
+// Get all users - Admin only
+app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const result = await users.find({}).toArray();
+    const result = await users
+      .find(
+        {},
+        {
+          projection: {
+            name: 1,
+            email: 1,
+            image: 1,
+            role: 1,
+            plan: 1,
+          },
+        },
+      )
+      .toArray();
+
     res.send(result);
   } catch (error) {
     console.error("Get users error:", error);
@@ -480,7 +492,8 @@ app.get("/users", async (req, res) => {
   }
 });
 
-app.patch("/users/:id/role", async (req, res) => {
+// Update user role - Admin only
+app.patch("/users/:id/role", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { role } = req.body;
@@ -504,12 +517,13 @@ app.patch("/users/:id/role", async (req, res) => {
 
     res.send({ message: "User role updated successfully." });
   } catch (error) {
+    console.error("Update user role error:", error);
     res.status(500).send({ message: "Failed to update user role." });
   }
 });
 
 // Student API
-app.get("/student/stats", async (req, res) => {
+app.get("/student/stats", verifyToken, verifyStudent, async (req, res) => {
   try {
     const { studentEmail } = req.query;
 
@@ -559,69 +573,107 @@ app.get("/student/stats", async (req, res) => {
 });
 
 // Get Student Applications
-app.get("/student/applications", async (req, res) => {
-  try {
-    const { studentEmail } = req.query;
 
-    if (!studentEmail) {
-      return res.status(400).send({
-        message: "Student email is required.",
+app.get(
+  "/student/applications",
+  verifyToken,
+  verifyStudent,
+  async (req, res) => {
+    try {
+      const studentEmail = req.user.email.toLowerCase();
+
+      const result = await applications
+        .find({ studentEmail })
+        .sort({ appliedAt: -1 })
+        .toArray();
+
+      res.send(result);
+    } catch (error) {
+      console.error("Get student applications error:", error);
+      res.status(500).send({
+        message: "Failed to fetch student applications.",
       });
     }
+  },
+);
 
-    const result = await applications
-      .find({ studentEmail: studentEmail.toLowerCase() })
-      .sort({ appliedAt: -1 })
-      .toArray();
+app.get("/student/stats", verifyToken, verifyStudent, async (req, res) => {
+  try {
+    const studentEmail = req.user.email.toLowerCase();
 
-    res.send(result);
+    const [
+      totalApplications,
+      acceptedApplications,
+      pendingApplications,
+      student,
+    ] = await Promise.all([
+      applications.countDocuments({ studentEmail }),
+      applications.countDocuments({ studentEmail, status: "accepted" }),
+      applications.countDocuments({ studentEmail, status: "pending" }),
+      users.findOne(
+        { _id: new ObjectId(req.user.id) },
+        { projection: { plan: 1 } },
+      ),
+    ]);
+
+    if (!student) {
+      return res.status(404).send({ message: "Student not found." });
+    }
+
+    res.send({
+      totalApplications,
+      acceptedApplications,
+      pendingApplications,
+      currentPlan: student.plan || "free",
+    });
   } catch (error) {
-    console.error("Get student applications error:", error);
-
+    console.error("Student stats error:", error);
     res.status(500).send({
-      message: "Failed to fetch student applications.",
+      message: "Failed to fetch student statistics.",
     });
   }
 });
 
 // Cancel Student Application
-app.delete("/student/applications/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { studentEmail } = req.query;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid application ID." });
-    }
+app.delete(
+  "/student/applications/:id",
+  verifyToken,
+  verifyStudent,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    if (!studentEmail) {
-      return res.status(400).send({ message: "Student email is required." });
-    }
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid application ID.",
+        });
+      }
 
-    const result = await applications.deleteOne({
-      _id: new ObjectId(id),
-      studentEmail: studentEmail.toLowerCase(),
-      status: "pending",
-    });
+      const result = await applications.deleteOne({
+        _id: new ObjectId(id),
+        studentEmail: req.user.email.toLowerCase(),
+        status: "pending",
+      });
 
-    if (result.deletedCount === 0) {
-      return res.status(404).send({
-        message: "Application not found or it can no longer be cancelled.",
+      if (result.deletedCount === 0) {
+        return res.status(404).send({
+          message: "Application not found or it can no longer be cancelled.",
+        });
+      }
+
+      res.send({
+        success: true,
+        message: "Application cancelled successfully.",
+      });
+    } catch (error) {
+      console.error("Cancel student application error:", error);
+      res.status(500).send({
+        message: "Failed to cancel application.",
       });
     }
-
-    res.send({
-      success: true,
-      message: "Application cancelled successfully.",
-    });
-  } catch (error) {
-    console.error("Cancel student application error:", error);
-
-    res.status(500).send({
-      message: "Failed to cancel application.",
-    });
-  }
-});
+  },
+);
 
 // Tutor Applications
 
@@ -690,7 +742,7 @@ app.patch(
 // Tutor Api
 
 // Get Tuitions
-app.get("/tuitions", async (req, res) => {
+app.get("/tuitions", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { tutorEmail, search, subject, classLevel, mode } = req.query;
 
@@ -725,7 +777,7 @@ app.get("/tuitions", async (req, res) => {
 });
 
 // Get Tuition Details
-app.get("/tuitions/:id", async (req, res) => {
+app.get("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -757,7 +809,7 @@ app.get("/tuitions/:id", async (req, res) => {
   }
 });
 
-app.post("/tuitions", async (req, res) => {
+app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
   try {
     const {
       title,
@@ -836,7 +888,7 @@ app.post("/tuitions", async (req, res) => {
   }
 });
 
-app.patch("/tuitions/:id", async (req, res) => {
+app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { id } = req.params;
     const { tutorEmail, ...updates } = req.body;
@@ -926,41 +978,46 @@ app.patch("/tuitions/:id", async (req, res) => {
   }
 });
 
-app.patch("/tuitions/:id/status", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { tutorEmail, isActive } = req.body;
+app.patch(
+  "/tuitions/:id/status",
+  verifyToken,
+  verifyTutor,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { tutorEmail, isActive } = req.body;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid tuition ID." });
-    }
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid tuition ID." });
+      }
 
-    if (!tutorEmail || typeof isActive !== "boolean") {
-      return res.status(400).send({ message: "Invalid status information." });
-    }
+      if (!tutorEmail || typeof isActive !== "boolean") {
+        return res.status(400).send({ message: "Invalid status information." });
+      }
 
-    const result = await tuitions.updateOne(
-      { _id: new ObjectId(id), tutorEmail },
-      { $set: { isActive } },
-    );
+      const result = await tuitions.updateOne(
+        { _id: new ObjectId(id), tutorEmail },
+        { $set: { isActive } },
+      );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).send({
-        message: "Tuition not found or you do not own this listing.",
+      if (result.matchedCount === 0) {
+        return res.status(404).send({
+          message: "Tuition not found or you do not own this listing.",
+        });
+      }
+
+      res.send({
+        success: true,
+        message: `Tuition ${isActive ? "activated" : "closed"} successfully.`,
       });
+    } catch (error) {
+      console.error("Toggle tuition error:", error);
+      res.status(500).send({ message: "Failed to update tuition status." });
     }
+  },
+);
 
-    res.send({
-      success: true,
-      message: `Tuition ${isActive ? "activated" : "closed"} successfully.`,
-    });
-  } catch (error) {
-    console.error("Toggle tuition error:", error);
-    res.status(500).send({ message: "Failed to update tuition status." });
-  }
-});
-
-app.delete("/tuitions/:id", async (req, res) => {
+app.delete("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { id } = req.params;
     const { tutorEmail } = req.query;
@@ -995,7 +1052,7 @@ app.delete("/tuitions/:id", async (req, res) => {
 });
 
 // Admin Api
-app.get("/admin/stats", async (req, res) => {
+app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const [
       totalUsers,
@@ -1035,7 +1092,7 @@ app.get("/admin/stats", async (req, res) => {
   }
 });
 
-app.get("/admin/tuitions", async (req, res) => {
+app.get("/admin/tuitions", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const result = await tuitions.find({}).sort({ createdAt: -1 }).toArray();
 
@@ -1047,35 +1104,40 @@ app.get("/admin/tuitions", async (req, res) => {
   }
 });
 
-app.patch("/admin/tuitions/:id/status", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { approvalStatus } = req.body;
+app.patch(
+  "/admin/tuitions/:id/status",
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { approvalStatus } = req.body;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid tuition ID." });
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid tuition ID." });
+      }
+
+      if (!["approved", "rejected"].includes(approvalStatus)) {
+        return res.status(400).send({ message: "Invalid approval status." });
+      }
+
+      const result = await tuitions.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { approvalStatus } },
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "Tuition not found." });
+      }
+
+      res.send({ message: "Tuition status updated successfully." });
+    } catch (error) {
+      res.status(500).send({
+        message: "Failed to update tuition status.",
+      });
     }
-
-    if (!["approved", "rejected"].includes(approvalStatus)) {
-      return res.status(400).send({ message: "Invalid approval status." });
-    }
-
-    const result = await tuitions.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { approvalStatus } },
-    );
-
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "Tuition not found." });
-    }
-
-    res.send({ message: "Tuition status updated successfully." });
-  } catch (error) {
-    res.status(500).send({
-      message: "Failed to update tuition status.",
-    });
-  }
-});
+  },
+);
 
 app.get("/admin/transactions", verifyToken, verifyAdmin, async (req, res) => {
   try {
