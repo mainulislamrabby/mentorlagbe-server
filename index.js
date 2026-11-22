@@ -121,6 +121,16 @@ const tuitions = database.collection("tuitions");
 const payments = database.collection("payments");
 const applications = database.collection("applications");
 
+await applications.createIndex(
+  {
+    tuitionId: 1,
+    studentEmail: 1,
+  },
+  {
+    unique: true,
+  },
+);
+
 app.get("/", (req, res) => {
   res.send(`MentorLagbe is running on port: ${PORT}`);
 });
