@@ -3,13 +3,98 @@ import cors from "cors";
 import "dotenv/config";
 import { MongoClient, ObjectId } from "mongodb";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import Stripe from "stripe";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-app.use(express.json());
 app.use(cors());
 
+app.post(
+  "/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["stripe-signature"];
+
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET,
+      );
+    } catch (error) {
+      console.error("Stripe webhook signature verification failed:", error);
+
+      return res.status(400).send({
+        message: "Invalid Stripe webhook signature.",
+      });
+    }
+
+    try {
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+
+        const userId = session.metadata?.userId;
+        const userEmail = session.metadata?.userEmail;
+        const userName = session.metadata?.userName;
+        const userRole = session.metadata?.userRole;
+        const planName = session.metadata?.planName;
+
+        if (!userId || !userEmail || !userRole || !planName) {
+          return res.status(400).send({
+            message: "Missing checkout metadata.",
+          });
+        }
+
+        const existingPayment = await payments.findOne({
+          stripeSessionId: session.id,
+        });
+
+        if (!existingPayment) {
+          await payments.insertOne({
+            userEmail: userEmail.toLowerCase(),
+            userName: userName || "",
+            userRole,
+            planName,
+            amount: (session.amount_total || 0) / 100,
+            currency: session.currency || "usd",
+            transactionId:
+              session.payment_intent || session.subscription || session.id,
+            stripeSessionId: session.id,
+            paymentStatus: "paid",
+            paidAt: new Date(),
+          });
+        }
+
+        await users.updateOne(
+          {
+            _id: new ObjectId(userId),
+          },
+          {
+            $set: {
+              plan: "pro",
+            },
+          },
+        );
+      }
+
+      return res.send({
+        received: true,
+      });
+    } catch (error) {
+      console.error("Stripe webhook processing error:", error);
+
+      return res.status(500).send({
+        message: "Webhook processing failed.",
+      });
+    }
+  },
+);
+
+app.use(express.json());
 const AUTH_URL = process.env.NEXT_PUBLIC_CLIENT_URL;
 
 if (!AUTH_URL) {
@@ -121,6 +206,15 @@ const tuitions = database.collection("tuitions");
 const payments = database.collection("payments");
 const applications = database.collection("applications");
 
+await payments.createIndex(
+  {
+    stripeSessionId: 1,
+  },
+  {
+    unique: true,
+  },
+);
+
 await applications.createIndex(
   {
     tuitionId: 1,
@@ -133,6 +227,92 @@ await applications.createIndex(
 
 app.get("/", (req, res) => {
   res.send(`MentorLagbe is running on port: ${PORT}`);
+});
+
+app.post("/stripe/create-checkout-session", verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== "student" && req.user.role !== "tutor") {
+      return res.status(403).send({
+        message: "Only students and tutors can subscribe to Pro.",
+      });
+    }
+
+    const user = await users.findOne({
+      _id: new ObjectId(req.user.id),
+    });
+
+    if (!user) {
+      return res.status(404).send({
+        message: "User not found.",
+      });
+    }
+
+    if (user.plan === "pro") {
+      return res.status(400).send({
+        message: "You are already subscribed to Pro.",
+      });
+    }
+
+    const amount = req.user.role === "tutor" ? 1500 : 1000;
+
+    const planName =
+      req.user.role === "tutor" ? "Pro Tutor Plan" : "Pro Student Plan";
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+
+      payment_method_types: ["card"],
+
+      customer_email: req.user.email,
+
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+
+            product_data: {
+              name: planName,
+              description:
+                req.user.role === "tutor"
+                  ? "Unlimited tuition posts and verified Pro badge."
+                  : "Priority booking and Pro membership badge.",
+            },
+
+            unit_amount: amount,
+
+            recurring: {
+              interval: "month",
+            },
+          },
+
+          quantity: 1,
+        },
+      ],
+
+      metadata: {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        userName: req.user.name,
+        userRole: req.user.role,
+        planName,
+      },
+
+      success_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+
+      cancel_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/cancel`,
+    });
+
+    res.send({
+      success: true,
+      url: session.url,
+    });
+  } catch (error) {
+    console.error("Create Stripe checkout error:", error);
+
+    res.status(500).send({
+      message: "Failed to create Stripe checkout session.",
+    });
+  }
 });
 
 app.post("/applications", verifyToken, verifyStudent, async (req, res) => {
