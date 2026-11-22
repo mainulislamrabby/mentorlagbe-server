@@ -125,6 +125,85 @@ app.get("/", (req, res) => {
   res.send(`MentorLagbe is running on port: ${PORT}`);
 });
 
+app.post("/applications", verifyToken, verifyStudent, async (req, res) => {
+  try {
+    const { tuitionId, studentPhone, preferredSchedule, studentNote } =
+      req.body;
+
+    if (
+      !tuitionId ||
+      !ObjectId.isValid(tuitionId) ||
+      !studentPhone?.trim() ||
+      !preferredSchedule?.trim()
+    ) {
+      return res.status(400).send({
+        message: "Please provide all required application information.",
+      });
+    }
+
+    const tuition = await tuitions.findOne({
+      _id: new ObjectId(tuitionId),
+      approvalStatus: "approved",
+      isActive: true,
+    });
+
+    if (!tuition) {
+      return res.status(404).send({
+        message: "Tuition not found or is no longer available.",
+      });
+    }
+
+    const studentEmail = req.user.email.toLowerCase();
+
+    const existingApplication = await applications.findOne({
+      tuitionId,
+      studentEmail,
+    });
+
+    if (existingApplication) {
+      return res.status(409).send({
+        message: "You have already applied for this tuition.",
+      });
+    }
+
+    const application = {
+      tuitionId,
+      tuitionTitle: tuition.title,
+      subject: tuition.subject,
+      monthlyFee: tuition.monthlyFee,
+      tutorEmail: tuition.tutorEmail.toLowerCase(),
+      studentName: req.user.name,
+      studentEmail,
+      studentPhone: studentPhone.trim(),
+      preferredSchedule: preferredSchedule.trim(),
+      studentNote: studentNote?.trim() || "",
+      status: "pending",
+      appliedAt: new Date(),
+    };
+
+    const result = await applications.insertOne(application);
+
+    res.status(201).send({
+      success: true,
+      message: "Application submitted successfully.",
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Submit application error:", error);
+
+    res.status(500).send({
+      message: "Failed to submit application.",
+    });
+  }
+});
+
+app.get("/auth-test", verifyToken, (req, res) => {
+  res.send({
+    message: "Authentication successful.",
+    user: req.user,
+  });
+});
+
 // Users API
 app.get("/users", async (req, res) => {
   try {
