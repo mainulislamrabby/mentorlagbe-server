@@ -2,12 +2,88 @@ import express from "express";
 import cors from "cors";
 import "dotenv/config";
 import { MongoClient, ObjectId } from "mongodb";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 app.use(cors());
+
+const AUTH_URL = process.env.NEXT_PUBLIC_CLIENT_URL;
+
+if (!AUTH_URL) {
+  throw new Error("NEXT_PUBLIC_CLIENT_URL is not configured.");
+}
+
+const JWKS = createRemoteJWKSet(new URL("/api/auth/jwks", AUTH_URL));
+
+const verifyToken = async (req, res, next) => {
+  try {
+    const authorization = req.headers.authorization;
+
+    if (!authorization?.startsWith("Bearer ")) {
+      return res.status(401).send({
+        message: "Authentication required.",
+      });
+    }
+
+    const token = authorization.split(" ")[1];
+
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: AUTH_URL,
+      audience: AUTH_URL,
+    });
+
+    if (!payload.sub) {
+      return res.status(401).send({
+        message: "Invalid authentication token.",
+      });
+    }
+
+    req.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+    };
+
+    next();
+  } catch {
+    return res.status(401).send({
+      message: "Invalid or expired authentication token.",
+    });
+  }
+};
+
+const verifyStudent = (req, res, next) => {
+  if (req.user?.role !== "student") {
+    return res.status(403).send({
+      message: "Only students can perform this action.",
+    });
+  }
+
+  next();
+};
+
+const verifyTutor = (req, res, next) => {
+  if (req.user?.role !== "tutor") {
+    return res.status(403).send({
+      message: "Only tutors can perform this action.",
+    });
+  }
+
+  next();
+};
+
+const verifyAdmin = (req, res, next) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).send({
+      message: "Admin access required.",
+    });
+  }
+
+  next();
+};
 
 const client = new MongoClient(process.env.MONGO_URL);
 
