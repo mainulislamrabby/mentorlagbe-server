@@ -395,6 +395,39 @@ app.get("/tuitions", async (req, res) => {
   }
 });
 
+// Get Tuition Details
+app.get("/tuitions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        message: "Invalid tuition ID.",
+      });
+    }
+
+    const tuition = await tuitions.findOne({
+      _id: new ObjectId(id),
+      approvalStatus: "approved",
+      isActive: true,
+    });
+
+    if (!tuition) {
+      return res.status(404).send({
+        message: "Tuition not found or unavailable.",
+      });
+    }
+
+    res.send(tuition);
+  } catch (error) {
+    console.error("Get tuition details error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch tuition details.",
+    });
+  }
+});
+
 app.post("/tuitions", async (req, res) => {
   try {
     const {
