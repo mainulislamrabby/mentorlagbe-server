@@ -193,11 +193,26 @@ app.delete("/student/applications/:id", async (req, res) => {
 });
 
 // Tutor Api
+
+// Get Tuitions
 app.get("/tuitions", async (req, res) => {
   try {
-    const { tutorEmail } = req.query;
+    const { tutorEmail, search, subject, classLevel, mode } = req.query;
 
-    const filter = tutorEmail ? { tutorEmail } : {};
+    const filter = tutorEmail
+      ? { tutorEmail }
+      : { approvalStatus: "approved", isActive: true };
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { subject: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (subject) filter.subject = subject;
+    if (classLevel) filter.classLevel = classLevel;
+    if (mode) filter.mode = mode;
 
     const result = await tuitions
       .find(filter)
@@ -207,7 +222,10 @@ app.get("/tuitions", async (req, res) => {
     res.send(result);
   } catch (error) {
     console.error("Get tuitions error:", error);
-    res.status(500).send({ message: "Failed to fetch tuitions." });
+
+    res.status(500).send({
+      message: "Failed to fetch tuitions.",
+    });
   }
 });
 
