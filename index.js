@@ -387,6 +387,89 @@ app.post("/applications", verifyToken, verifyStudent, async (req, res) => {
   }
 });
 
+// Profile API
+
+app.get("/profile", verifyToken, async (req, res) => {
+  try {
+    const user = await users.findOne(
+      {
+        _id: new ObjectId(req.user.id),
+      },
+      {
+        projection: {
+          name: 1,
+          email: 1,
+          image: 1,
+          phone: 1,
+          bio: 1,
+          role: 1,
+          plan: 1,
+        },
+      },
+    );
+
+    if (!user) {
+      return res.status(404).send({
+        message: "User profile not found.",
+      });
+    }
+
+    res.send(user);
+  } catch (error) {
+    console.error("Get profile error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch profile.",
+    });
+  }
+});
+
+app.patch("/profile", verifyToken, async (req, res) => {
+  try {
+    const { name, phone, bio, image } = req.body;
+
+    if (!name?.trim()) {
+      return res.status(400).send({
+        message: "Name is required.",
+      });
+    }
+
+    const updateData = {
+      name: name.trim(),
+      phone: phone?.trim() || "",
+      bio: bio?.trim() || "",
+      image: image?.trim() || "",
+      updatedAt: new Date(),
+    };
+
+    const result = await users.updateOne(
+      {
+        _id: new ObjectId(req.user.id),
+      },
+      {
+        $set: updateData,
+      },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        message: "User not found.",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: "Profile updated successfully.",
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+
+    res.status(500).send({
+      message: "Failed to update profile.",
+    });
+  }
+});
+
 app.get("/auth-test", verifyToken, (req, res) => {
   res.send({
     message: "Authentication successful.",
