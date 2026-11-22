@@ -253,41 +253,37 @@ app.post("/stripe/create-checkout-session", verifyToken, async (req, res) => {
       });
     }
 
-    const amount = req.user.role === "tutor" ? 1500 : 1000;
+    const priceId =
+      req.user.role === "student"
+        ? process.env.STRIPE_STUDENT_PRICE_ID
+        : process.env.STRIPE_TUTOR_PRICE_ID;
 
     const planName =
-      req.user.role === "tutor" ? "Pro Tutor Plan" : "Pro Student Plan";
+      req.user.role === "student"
+        ? "Pro Student Plan"
+        : "Pro Tutor Plan";
+
+    if (!priceId) {
+      return res.status(500).send({
+        message: "Stripe price is not configured.",
+      });
+    }
 
     const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-
-      payment_method_types: ["card"],
-
-      customer_email: req.user.email,
-
       line_items: [
         {
-          price_data: {
-            currency: "usd",
-
-            product_data: {
-              name: planName,
-              description:
-                req.user.role === "tutor"
-                  ? "Unlimited tuition posts and verified Pro badge."
-                  : "Priority booking and Pro membership badge.",
-            },
-
-            unit_amount: amount,
-
-            recurring: {
-              interval: "month",
-            },
-          },
-
+          price: priceId,
           quantity: 1,
         },
       ],
+
+      mode: "subscription",
+
+      customer_email: req.user.email,
+
+      success_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+
+      cancel_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/cancel`,
 
       metadata: {
         userId: req.user.id,
@@ -296,20 +292,16 @@ app.post("/stripe/create-checkout-session", verifyToken, async (req, res) => {
         userRole: req.user.role,
         planName,
       },
-
-      success_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-
-      cancel_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/cancel`,
     });
 
-    res.send({
+    return res.send({
       success: true,
       url: session.url,
     });
   } catch (error) {
     console.error("Create Stripe checkout error:", error);
 
-    res.status(500).send({
+    return res.status(500).send({
       message: "Failed to create Stripe checkout session.",
     });
   }
@@ -1081,6 +1073,27 @@ app.patch("/admin/tuitions/:id/status", async (req, res) => {
   } catch (error) {
     res.status(500).send({
       message: "Failed to update tuition status.",
+    });
+  }
+});
+
+app.get("/admin/transactions", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const result = await payments
+      .find({
+        paymentStatus: "paid",
+      })
+      .sort({
+        paidAt: -1,
+      })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Get transactions error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch transactions.",
     });
   }
 });
