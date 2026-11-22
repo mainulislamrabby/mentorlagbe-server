@@ -368,6 +368,70 @@ app.delete("/student/applications/:id", async (req, res) => {
   }
 });
 
+// Tutor Applications
+
+// Get all applications for the logged-in tutor
+app.get("/tutor/applications", verifyToken, verifyTutor, async (req, res) => {
+  const tutorEmail = req.user.email.toLowerCase();
+
+  const result = await applications
+    .find({ tutorEmail })
+    .sort({ appliedAt: -1 })
+    .toArray();
+
+  res.send(result);
+});
+
+// Update application status
+app.patch(
+  "/tutor/applications/:id/status",
+  verifyToken,
+  verifyTutor,
+  async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        message: "Invalid application ID.",
+      });
+    }
+
+    if (!["accepted", "rejected"].includes(status)) {
+      return res.status(400).send({
+        message: "Invalid application status.",
+      });
+    }
+
+    const tutorEmail = req.user.email.toLowerCase();
+
+    const result = await applications.updateOne(
+      {
+        _id: new ObjectId(id),
+        tutorEmail,
+        status: "pending",
+      },
+      {
+        $set: {
+          status,
+        },
+      },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        message:
+          "Application not found, already processed, or you do not own this application.",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: `Application ${status} successfully.`,
+    });
+  },
+);
+
 // Tutor Api
 
 // Get Tuitions
