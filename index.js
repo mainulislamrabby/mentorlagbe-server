@@ -522,56 +522,6 @@ app.patch("/users/:id/role", verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-// Student API
-app.get("/student/stats", verifyToken, verifyStudent, async (req, res) => {
-  try {
-    const { studentEmail } = req.query;
-
-    if (!studentEmail) {
-      return res.status(400).send({
-        message: "Student email is required.",
-      });
-    }
-
-    const [
-      totalApplications,
-      acceptedApplications,
-      pendingApplications,
-      student,
-    ] = await Promise.all([
-      applications.countDocuments({ studentEmail }),
-      applications.countDocuments({
-        studentEmail,
-        status: "accepted",
-      }),
-      applications.countDocuments({
-        studentEmail,
-        status: "pending",
-      }),
-      users.findOne({ email: studentEmail }, { projection: { plan: 1 } }),
-    ]);
-
-    if (!student) {
-      return res.status(404).send({
-        message: "Student not found.",
-      });
-    }
-
-    res.send({
-      totalApplications,
-      acceptedApplications,
-      pendingApplications,
-      currentPlan: student.plan || "free",
-    });
-  } catch (error) {
-    console.error("Student stats error:", error);
-
-    res.status(500).send({
-      message: "Failed to fetch student statistics.",
-    });
-  }
-});
-
 // Get Student Applications
 
 app.get(
@@ -742,13 +692,65 @@ app.patch(
 // Tutor Api
 
 // Get Tuitions
-app.get("/tuitions", verifyToken, verifyTutor, async (req, res) => {
-  try {
-    const { tutorEmail, search, subject, classLevel, mode } = req.query;
 
-    const filter = tutorEmail
-      ? { tutorEmail }
-      : { approvalStatus: "approved", isActive: true };
+
+app.get("/tutor/stats", verifyToken, verifyTutor, async (req, res) => {
+  try {
+    const tutorEmail = req.user.email.toLowerCase();
+
+    const [
+      totalTuitions,
+      activeApprovedTuitions,
+      totalApplicants,
+      tutor,
+    ] = await Promise.all([
+      tuitions.countDocuments({ tutorEmail }),
+
+      tuitions.countDocuments({
+        tutorEmail,
+        approvalStatus: "approved",
+        isActive: true,
+      }),
+
+      applications.countDocuments({ tutorEmail }),
+
+      users.findOne(
+        { _id: new ObjectId(req.user.id) },
+        { projection: { plan: 1 } },
+      ),
+    ]);
+
+    if (!tutor) {
+      return res.status(404).send({
+        message: "Tutor not found.",
+      });
+    }
+
+    res.send({
+      totalTuitions,
+      activeApprovedTuitions,
+      totalApplicants,
+      currentPlan: tutor.plan || "free",
+    });
+  } catch (error) {
+    console.error("Tutor stats error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch tutor statistics.",
+    });
+  }
+});
+
+
+// Public: Browse approved and active tuitions
+app.get("/tuitions", async (req, res) => {
+  try {
+    const { search, subject, classLevel, mode } = req.query;
+
+    const filter = {
+      approvalStatus: "approved",
+      isActive: true,
+    };
 
     if (search) {
       filter.$or = [
@@ -768,16 +770,36 @@ app.get("/tuitions", verifyToken, verifyTutor, async (req, res) => {
 
     res.send(result);
   } catch (error) {
-    console.error("Get tuitions error:", error);
-
+    console.error("Browse tuitions error:", error);
     res.status(500).send({
       message: "Failed to fetch tuitions.",
     });
   }
 });
 
-// Get Tuition Details
-app.get("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
+// Private: Get only the logged-in tutor's tuitions
+app.get("/tutor/tuitions", verifyToken, verifyTutor, async (req, res) => {
+  try {
+    const result = await tuitions
+      .find({
+        tutorEmail: req.user.email.toLowerCase(),
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Get tutor tuitions error:", error);
+    res.status(500).send({
+      message: "Failed to fetch your tuitions.",
+    });
+  }
+});
+
+
+
+// Public: Get approved tuition details
+app.get("/tuitions/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -802,12 +824,12 @@ app.get("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
     res.send(tuition);
   } catch (error) {
     console.error("Get tuition details error:", error);
-
     res.status(500).send({
       message: "Failed to fetch tuition details.",
     });
   }
 });
+
 
 app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
   try {
@@ -821,8 +843,6 @@ app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
       daysPerWeek,
       bannerImage,
       description,
-      tutorEmail,
-      tutorName,
     } = req.body;
 
     const fee = Number(monthlyFee);
@@ -833,17 +853,16 @@ app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
       !subject?.trim() ||
       !classLevel?.trim() ||
       !location?.trim() ||
-      !bannerImage ||
+      !bannerImage?.trim() ||
       !description?.trim() ||
-      !tutorEmail?.trim() ||
-      !tutorName?.trim() ||
       !Number.isFinite(fee) ||
       fee <= 0 ||
       !Number.isInteger(days) ||
-      days <= 0
+      days < 1 ||
+      days > 7
     ) {
       return res.status(400).send({
-        message: "Please provide all required tuition information.",
+        message: "Please provide valid tuition information.",
       });
     }
 
@@ -861,15 +880,16 @@ app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
       location: location.trim(),
       monthlyFee: fee,
       daysPerWeek: days,
-      bannerImage,
+      bannerImage: bannerImage.trim(),
       description: description.trim(),
-      tutorName: tutorName.trim(),
-      tutorEmail: tutorEmail.trim().toLowerCase(),
+
+      // Identity comes from the verified JWT user
+      tutorName: req.user.name,
+      tutorEmail: req.user.email.toLowerCase(),
+
       approvalStatus: "pending",
       isActive: true,
       createdAt: new Date(),
-      tutorEmail,
-      tutorName,
     };
 
     const result = await tuitions.insertOne(tuition);
@@ -881,24 +901,23 @@ app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
     });
   } catch (error) {
     console.error("Post tuition error:", error);
-
     res.status(500).send({
-      message: "Internal server error.",
+      message: "Failed to create tuition.",
     });
   }
 });
 
+
+
 app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tutorEmail, ...updates } = req.body;
+    const updates = req.body;
 
     if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid tuition ID." });
-    }
-
-    if (!tutorEmail) {
-      return res.status(400).send({ message: "Tutor email is required." });
+      return res.status(400).send({
+        message: "Invalid tuition ID.",
+      });
     }
 
     const allowedFields = [
@@ -921,45 +940,75 @@ app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
       }
     }
 
-    if (
-      updateData.mode !== undefined &&
-      !["Online", "Offline"].includes(updateData.mode)
-    ) {
-      return res.status(400).send({ message: "Invalid tuition mode." });
-    }
-
-    if (
-      updateData.monthlyFee !== undefined &&
-      (!Number.isFinite(Number(updateData.monthlyFee)) ||
-        Number(updateData.monthlyFee) <= 0)
-    ) {
-      return res.status(400).send({ message: "Invalid monthly fee." });
-    }
-
-    if (
-      updateData.daysPerWeek !== undefined &&
-      (!Number.isInteger(Number(updateData.daysPerWeek)) ||
-        Number(updateData.daysPerWeek) < 1 ||
-        Number(updateData.daysPerWeek) > 7)
-    ) {
-      return res.status(400).send({ message: "Invalid days per week." });
+    if (updateData.mode !== undefined &&
+        !["Online", "Offline"].includes(updateData.mode)) {
+      return res.status(400).send({
+        message: "Invalid tuition mode.",
+      });
     }
 
     if (updateData.monthlyFee !== undefined) {
-      updateData.monthlyFee = Number(updateData.monthlyFee);
+      const fee = Number(updateData.monthlyFee);
+
+      if (!Number.isFinite(fee) || fee <= 0) {
+        return res.status(400).send({
+          message: "Invalid monthly fee.",
+        });
+      }
+
+      updateData.monthlyFee = fee;
     }
 
     if (updateData.daysPerWeek !== undefined) {
-      updateData.daysPerWeek = Number(updateData.daysPerWeek);
+      const days = Number(updateData.daysPerWeek);
+
+      if (!Number.isInteger(days) || days < 1 || days > 7) {
+        return res.status(400).send({
+          message: "Invalid days per week.",
+        });
+      }
+
+      updateData.daysPerWeek = days;
+    }
+
+    for (const field of [
+      "title",
+      "subject",
+      "classLevel",
+      "location",
+      "bannerImage",
+      "description",
+    ]) {
+      if (updateData[field] !== undefined) {
+        if (
+          typeof updateData[field] !== "string" ||
+          !updateData[field].trim()
+        ) {
+          return res.status(400).send({
+            message: `Invalid ${field}.`,
+          });
+        }
+
+        updateData[field] = updateData[field].trim();
+      }
     }
 
     if (Object.keys(updateData).length === 0) {
-      return res.status(400).send({ message: "No valid fields to update." });
+      return res.status(400).send({
+        message: "No valid fields to update.",
+      });
     }
 
+    updateData.updatedAt = new Date();
+
     const result = await tuitions.updateOne(
-      { _id: new ObjectId(id), tutorEmail },
-      { $set: updateData },
+      {
+        _id: new ObjectId(id),
+        tutorEmail: req.user.email.toLowerCase(),
+      },
+      {
+        $set: updateData,
+      },
     );
 
     if (result.matchedCount === 0) {
@@ -974,10 +1023,15 @@ app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
     });
   } catch (error) {
     console.error("Update tuition error:", error);
-    res.status(500).send({ message: "Failed to update tuition." });
+    res.status(500).send({
+      message: "Failed to update tuition.",
+    });
   }
 });
 
+
+
+// Activate or deactivate a tutor's own tuition
 app.patch(
   "/tuitions/:id/status",
   verifyToken,
@@ -985,19 +1039,31 @@ app.patch(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { tutorEmail, isActive } = req.body;
+      const { isActive } = req.body;
 
       if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid tuition ID." });
+        return res.status(400).send({
+          message: "Invalid tuition ID.",
+        });
       }
 
-      if (!tutorEmail || typeof isActive !== "boolean") {
-        return res.status(400).send({ message: "Invalid status information." });
+      if (typeof isActive !== "boolean") {
+        return res.status(400).send({
+          message: "Invalid tuition status.",
+        });
       }
 
       const result = await tuitions.updateOne(
-        { _id: new ObjectId(id), tutorEmail },
-        { $set: { isActive } },
+        {
+          _id: new ObjectId(id),
+          tutorEmail: req.user.email.toLowerCase(),
+        },
+        {
+          $set: {
+            isActive,
+            updatedAt: new Date(),
+          },
+        },
       );
 
       if (result.matchedCount === 0) {
@@ -1012,27 +1078,27 @@ app.patch(
       });
     } catch (error) {
       console.error("Toggle tuition error:", error);
-      res.status(500).send({ message: "Failed to update tuition status." });
+      res.status(500).send({
+        message: "Failed to update tuition status.",
+      });
     }
   },
 );
 
+// Delete a tutor's own tuition
 app.delete("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tutorEmail } = req.query;
 
     if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid tuition ID." });
-    }
-
-    if (!tutorEmail) {
-      return res.status(400).send({ message: "Tutor email is required." });
+      return res.status(400).send({
+        message: "Invalid tuition ID.",
+      });
     }
 
     const result = await tuitions.deleteOne({
       _id: new ObjectId(id),
-      tutorEmail,
+      tutorEmail: req.user.email.toLowerCase(),
     });
 
     if (result.deletedCount === 0) {
@@ -1047,9 +1113,12 @@ app.delete("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
     });
   } catch (error) {
     console.error("Delete tuition error:", error);
-    res.status(500).send({ message: "Failed to delete tuition." });
+    res.status(500).send({
+      message: "Failed to delete tuition.",
+    });
   }
 });
+
 
 // Admin Api
 app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
