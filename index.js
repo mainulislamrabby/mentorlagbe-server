@@ -35,20 +35,31 @@ const verifyToken = async (req, res, next) => {
       audience: AUTH_URL,
     });
 
-    if (!payload.sub) {
+    if (!payload.sub || !ObjectId.isValid(payload.sub)) {
       return res.status(401).send({
         message: "Invalid authentication token.",
       });
     }
 
+    const user = await users.findOne({
+      _id: new ObjectId(payload.sub),
+    });
+
+    if (!user) {
+      return res.status(401).send({
+        message: "User not found.",
+      });
+    }
+
     req.user = {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
+      id: user._id.toString(),
+      email: user.email,
+      name: user.name,
+      role: user.role,
     };
 
     next();
-  } catch {
+  } catch (error) {
     return res.status(401).send({
       message: "Invalid or expired authentication token.",
     });
