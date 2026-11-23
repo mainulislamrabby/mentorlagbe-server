@@ -297,7 +297,7 @@ app.post("/stripe/create-checkout-session", verifyToken, async (req, res) => {
       url: session.url,
     });
   } catch (error) {
-    console.error("Create Stripe checkout error:", error);
+    console.error("Stripe checkout error:", error);
 
     return res.status(500).send({
       message: "Failed to create Stripe checkout session.",
