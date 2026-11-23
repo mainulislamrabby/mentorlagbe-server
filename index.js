@@ -791,32 +791,27 @@ app.post(
 
 // Tutor Api
 
-
 app.get("/tutor/stats", verifyToken, verifyTutor, async (req, res) => {
   try {
     const tutorEmail = req.user.email.toLowerCase();
 
-    const [
-      totalTuitions,
-      activeApprovedTuitions,
-      totalApplicants,
-      tutor,
-    ] = await Promise.all([
-      tuitions.countDocuments({ tutorEmail }),
+    const [totalTuitions, activeApprovedTuitions, totalApplicants, tutor] =
+      await Promise.all([
+        tuitions.countDocuments({ tutorEmail }),
 
-      tuitions.countDocuments({
-        tutorEmail,
-        approvalStatus: "approved",
-        isActive: true,
-      }),
+        tuitions.countDocuments({
+          tutorEmail,
+          approvalStatus: "approved",
+          isActive: true,
+        }),
 
-      applications.countDocuments({ tutorEmail }),
+        applications.countDocuments({ tutorEmail }),
 
-      users.findOne(
-        { _id: new ObjectId(req.user.id) },
-        { projection: { plan: 1 } },
-      ),
-    ]);
+        users.findOne(
+          { _id: new ObjectId(req.user.id) },
+          { projection: { plan: 1 } },
+        ),
+      ]);
 
     if (!tutor) {
       return res.status(404).send({
@@ -846,10 +841,7 @@ app.get("/tuitions", async (req, res) => {
 
     // Pagination
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(
-      24,
-      Math.max(1, parseInt(req.query.limit, 10) || 6),
-    );
+    const limit = Math.min(24, Math.max(1, parseInt(req.query.limit, 10) || 6));
     const skip = (page - 1) * limit;
 
     // Filters
@@ -897,7 +889,6 @@ app.get("/tuitions", async (req, res) => {
   }
 });
 
-
 // Private: Get only the logged-in tutor's tuitions
 app.get("/tutor/tuitions", verifyToken, verifyTutor, async (req, res) => {
   try {
@@ -916,8 +907,6 @@ app.get("/tutor/tuitions", verifyToken, verifyTutor, async (req, res) => {
     });
   }
 });
-
-
 
 // Public: Get approved tuition details
 app.get("/tuitions/:id", async (req, res) => {
@@ -951,7 +940,6 @@ app.get("/tuitions/:id", async (req, res) => {
   }
 });
 
-
 app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
   try {
     const {
@@ -968,6 +956,33 @@ app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
 
     const fee = Number(monthlyFee);
     const days = Number(daysPerWeek);
+
+    const tutor = await users.findOne(
+      { _id: new ObjectId(req.user.id) },
+      { projection: { plan: 1 } },
+    );
+
+    if (!tutor) {
+      return res.status(404).send({
+        message: "Tutor account not found.",
+      });
+    }
+
+    const currentPlan = tutor.plan || "free";
+
+    if (currentPlan !== "pro") {
+      const totalTuitions = await tuitions.countDocuments({
+        tutorEmail: req.user.email.toLowerCase(),
+      });
+
+      if (totalTuitions >= 2) {
+        return res.status(403).send({
+          message:
+            "Free tutors can post up to 2 tuitions. Upgrade to Pro for unlimited posts.",
+          limitReached: true,
+        });
+      }
+    }
 
     if (
       !title?.trim() ||
@@ -1028,8 +1043,6 @@ app.post("/tuitions", verifyToken, verifyTutor, async (req, res) => {
   }
 });
 
-
-
 app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
   try {
     const { id } = req.params;
@@ -1061,8 +1074,10 @@ app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
       }
     }
 
-    if (updateData.mode !== undefined &&
-        !["Online", "Offline"].includes(updateData.mode)) {
+    if (
+      updateData.mode !== undefined &&
+      !["Online", "Offline"].includes(updateData.mode)
+    ) {
       return res.status(400).send({
         message: "Invalid tuition mode.",
       });
@@ -1149,8 +1164,6 @@ app.patch("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
     });
   }
 });
-
-
 
 // Activate or deactivate a tutor's own tuition
 app.patch(
@@ -1239,7 +1252,6 @@ app.delete("/tuitions/:id", verifyToken, verifyTutor, async (req, res) => {
     });
   }
 });
-
 
 // Admin Api
 app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
