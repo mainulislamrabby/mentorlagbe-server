@@ -279,9 +279,9 @@ app.post("/stripe/create-checkout-session", verifyToken, async (req, res) => {
 
       customer_email: req.user.email,
 
-      success_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
 
-      cancel_url: `${process.env.NEXT_PUBLIC_CLIENT_URL}/payment/cancel`,
+      cancel_url: `${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/payment/cancel`,
 
       metadata: {
         userId: req.user.id,
