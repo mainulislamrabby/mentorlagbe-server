@@ -95,10 +95,10 @@ app.post(
 );
 
 app.use(express.json());
-const AUTH_URL = process.env.NEXT_PUBLIC_CLIENT_URL;
+const AUTH_URL = process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
 
 if (!AUTH_URL) {
-  throw new Error("NEXT_PUBLIC_CLIENT_URL is not configured.");
+  throw new Error("NEXT_PUBLIC_BETTER_AUTH_URL is not configured.");
 }
 
 const JWKS = createRemoteJWKSet(new URL("/api/auth/jwks", AUTH_URL));
