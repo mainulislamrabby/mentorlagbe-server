@@ -689,6 +689,106 @@ app.patch(
   },
 );
 
+// Student: Submit a review for an accepted tuition
+app.post(
+  "/tuitions/:id/reviews",
+  verifyToken,
+  verifyStudent,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { rating, feedback } = req.body;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid tuition ID.",
+        });
+      }
+
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        return res.status(400).send({
+          message: "Rating must be between 1 and 5.",
+        });
+      }
+
+      if (
+        typeof feedback !== "string" ||
+        !feedback.trim() ||
+        feedback.trim().length > 1000
+      ) {
+        return res.status(400).send({
+          message: "Feedback is required and must be under 1000 characters.",
+        });
+      }
+
+      const tuitionId = id;
+      const studentEmail = req.user.email.toLowerCase();
+
+      const application = await applications.findOne({
+        tuitionId,
+        studentEmail,
+        status: "accepted",
+      });
+
+      if (!application) {
+        return res.status(403).send({
+          message: "Only students with accepted applications can review.",
+        });
+      }
+
+      const tuition = await tuitions.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!tuition) {
+        return res.status(404).send({
+          message: "Tuition not found.",
+        });
+      }
+
+      const existingReview = (tuition.reviews || []).some(
+        (review) => review.studentEmail === studentEmail,
+      );
+
+      if (existingReview) {
+        return res.status(409).send({
+          message: "You have already reviewed this tuition.",
+        });
+      }
+
+      const review = {
+        studentName: req.user.name,
+        studentEmail,
+        rating,
+        feedback: feedback.trim(),
+        createdAt: new Date(),
+      };
+
+      await tuitions.updateOne(
+        {
+          _id: new ObjectId(id),
+        },
+        {
+          $push: {
+            reviews: review,
+          },
+        },
+      );
+
+      return res.status(201).send({
+        success: true,
+        message: "Review submitted successfully.",
+      });
+    } catch (error) {
+      console.error("Submit tuition review error:", error);
+
+      return res.status(500).send({
+        message: "Failed to submit review.",
+      });
+    }
+  },
+);
+
 // Tutor Api
 
 
