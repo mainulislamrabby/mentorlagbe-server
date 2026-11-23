@@ -691,8 +691,6 @@ app.patch(
 
 // Tutor Api
 
-// Get Tuitions
-
 
 app.get("/tutor/stats", verifyToken, verifyTutor, async (req, res) => {
   try {
@@ -741,12 +739,20 @@ app.get("/tutor/stats", verifyToken, verifyTutor, async (req, res) => {
   }
 });
 
-
-// Public: Browse approved and active tuitions
+// Public: Browse approved and active tuitions with pagination
 app.get("/tuitions", async (req, res) => {
   try {
     const { search, subject, classLevel, mode } = req.query;
 
+    // Pagination
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      24,
+      Math.max(1, parseInt(req.query.limit, 10) || 6),
+    );
+    const skip = (page - 1) * limit;
+
+    // Filters
     const filter = {
       approvalStatus: "approved",
       isActive: true,
@@ -763,19 +769,34 @@ app.get("/tuitions", async (req, res) => {
     if (classLevel) filter.classLevel = classLevel;
     if (mode) filter.mode = mode;
 
-    const result = await tuitions
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray();
+    // Fetch paginated results and total count
+    const [result, total] = await Promise.all([
+      tuitions
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray(),
 
-    res.send(result);
+      tuitions.countDocuments(filter),
+    ]);
+
+    res.send({
+      tuitions: result,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (error) {
     console.error("Browse tuitions error:", error);
+
     res.status(500).send({
       message: "Failed to fetch tuitions.",
     });
   }
 });
+
 
 // Private: Get only the logged-in tutor's tuitions
 app.get("/tutor/tuitions", verifyToken, verifyTutor, async (req, res) => {
