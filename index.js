@@ -1365,3 +1365,5 @@ app.get("/admin/transactions", verifyToken, verifyAdmin, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`MentorLagbe is running on port: ${PORT}`);
 });
+
+export default app;
